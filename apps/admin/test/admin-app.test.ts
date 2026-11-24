@@ -200,6 +200,22 @@ describe("diseño del panel", () => {
     expect(await (await admin.request(`${BASE}/apps/${later.appId}`)).text()).not.toContain("Vence pronto");
   });
 
+  it("sin JS el botón Copiar queda oculto: [hidden] gana a display de .btn", async () => {
+    const css = await (await admin.request(`${BASE}/style.css`)).text();
+    expect(css).toContain("[hidden]{display:none!important}");
+    const { app } = await createApp(db, { slug: `panel-${++n}`, name: "Demo", url: "https://demo.example" });
+    const html = await (await post(`/apps/${app.id}/keys`, { label: "Cliente", max_devices: "1" })).text();
+    expect(html).toMatch(/<button[^>]*data-copy="secret-value"[^>]*hidden/);
+  });
+
+  it("el enlace «Registrar app» de la barra lateral abre el formulario", async () => {
+    await createApp(db, { slug: `panel-${++n}`, name: "Demo", url: "https://demo.example" });
+    const closed = await (await admin.request(`${BASE}/`)).text();
+    expect(closed).toContain('href="/?registrar"');
+    expect(closed).not.toContain('<details class="fold" open');
+    expect(await (await admin.request(`${BASE}/?registrar`)).text()).toContain('<details class="fold" open');
+  });
+
   it("sirve /app.js y la clave generada tiene botón de copiar", async () => {
     const js = await admin.request(`${BASE}/app.js`);
     expect(js.status).toBe(200);

@@ -87,6 +87,17 @@ describe("listApps", () => {
     expect(list.find((a) => a.id === app.id)).toMatchObject({ activeKeys: 1, activeDevices: 2 });
     expect(list.find((a) => a.id === empty.app.id)).toMatchObject({ activeKeys: 0, activeDevices: 0 });
   });
+
+  it("listApps no cuenta claves vencidas ni sus dispositivos", async () => {
+    const s = slug();
+    const now = new Date();
+    const { app, appKey } = await createApp(db, { slug: s, name: "Vencidas", url: "https://vencidas.test" });
+    const { key, licenseKey } = await createLicenseKey(db, { appId: app.id, label: "Caducará" });
+    await verifyLicense(db, { appSlug: s, appKey, licenseKey, deviceId: "device-v001" }, { ip: "9.9.9.3", now });
+    await db.update(licenseKeys).set({ expiresAt: new Date(now.getTime() - 60_000) }).where(eq(licenseKeys.id, key.id));
+    await createLicenseKey(db, { appId: app.id, label: "Futura", expiresAt: new Date(now.getTime() + 86_400_000) });
+    expect((await listApps(db)).find((a) => a.id === app.id)).toMatchObject({ activeKeys: 1, activeDevices: 0 });
+  });
 });
 
 describe("listLicenseKeys", () => {

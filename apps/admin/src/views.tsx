@@ -110,7 +110,7 @@ export function Layout(p: {
                 <span class="n">{a.activeKeys}</span>
               </a>
             ))}
-            <a href="/#registrar" class="it add">
+            <a href="/?registrar" class="it add">
               ＋ Registrar app
             </a>
           </nav>
@@ -146,7 +146,7 @@ function Secret(p: { label: string; value: string }) {
   );
 }
 
-export function HomePage(p: { apps: AppSummary[]; error?: string | undefined; now?: Date }) {
+export function HomePage(p: { apps: AppSummary[]; error?: string | undefined; register?: boolean }) {
   const totalKeys = p.apps.reduce((s, a) => s + a.activeKeys, 0);
   const totalDevices = p.apps.reduce((s, a) => s + a.activeDevices, 0);
   return (
@@ -160,7 +160,7 @@ export function HomePage(p: { apps: AppSummary[]; error?: string | undefined; no
           </div>
         </div>
         <div class="acts" id="registrar">
-          <Fold label="＋ Registrar app" primary open={!!p.error || p.apps.length === 0}>
+          <Fold label="＋ Registrar app" primary open={!!p.error || !!p.register || p.apps.length === 0}>
             <form method="post" action="/apps" class="form">
               <label>
                 Identificador (app_id)
@@ -252,8 +252,10 @@ export function AppPage(p: {
 }) {
   const a = p.app;
   const now = p.now ?? new Date();
-  const active = p.keys.filter((k) => k.status === "active");
+  // Activa = no revocada y sin vencer, igual que su etiqueta en la tabla.
+  const active = p.keys.filter((k) => k.status === "active" && expiry(k.expiresAt, now) !== "expired");
   const soon = active.filter((k) => expiry(k.expiresAt, now) === "soon").length;
+  const revoked = p.keys.filter((k) => k.status !== "active").length;
   return (
     <Layout title={a.name} apps={p.apps} current={a.id} error={p.error}>
       <div class="crumb">
@@ -327,7 +329,7 @@ export function AppPage(p: {
         <Stat label="Claves activas" value={active.length} />
         <Stat label="Dispositivos activos" value={active.reduce((s, k) => s + k.activeDevices, 0)} />
         <Stat label={`Vencen en ${SOON_DAYS} días`} value={soon} />
-        <Stat label="Revocadas" value={p.keys.length - active.length} />
+        <Stat label="Revocadas" value={revoked} />
       </div>
 
       <section class="panel">
@@ -707,6 +709,7 @@ export const STYLE = `
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text)}
+[hidden]{display:none!important}
 body{font:14px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif;display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
 a{color:var(--accent-text);text-decoration:none}a:hover{text-decoration:underline}
 code{font:12.5px ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--soft)}

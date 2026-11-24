@@ -182,9 +182,12 @@ export async function listApps(db: Db): Promise<AppSummary[]> {
     .select({
       ...getTableColumns(apps),
       // Columna externa cualificada a mano, como en listLicenseKeys.
-      activeKeys: sql<number>`(select count(*)::int from license_keys k where k.app_id = "apps"."id" and k.status = 'active')`,
+      // "Activa" = no revocada y sin vencer, igual que las etiquetas del panel.
+      activeKeys: sql<number>`(select count(*)::int from license_keys k where k.app_id = "apps"."id"
+        and k.status = 'active' and (k.expires_at is null or k.expires_at > now()))`,
       activeDevices: sql<number>`(select count(*)::int from devices d join license_keys k on k.id = d.key_id
-        where k.app_id = "apps"."id" and k.status = 'active' and d.status = 'active')`,
+        where k.app_id = "apps"."id" and k.status = 'active' and (k.expires_at is null or k.expires_at > now())
+        and d.status = 'active')`,
     })
     .from(apps)
     .orderBy(desc(apps.createdAt));

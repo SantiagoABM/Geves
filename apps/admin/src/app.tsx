@@ -77,7 +77,7 @@ export function createAdminApp(d: AdminDeps) {
   /** Apps para la barra lateral (y el inicio). */
   const nav = () => listApps(db);
 
-  app.get("/", async (c) => c.html(<HomePage apps={await nav()} />));
+  app.get("/", async (c) => c.html(<HomePage apps={await nav()} register={c.req.query("registrar") !== undefined} />));
 
   app.post("/apps", async (c) => {
     const b = await c.req.parseBody();
