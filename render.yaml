@@ -6,8 +6,9 @@ services:
     name: gestor-de-claves-api
     runtime: node
     plan: free
-    # Elige la región más cercana a la de tu proyecto de Supabase (virginia ↔ us-east-1).
-    region: virginia
+    # La región más cercana a la de tu proyecto de Supabase (frankfurt ↔ eu-west-1, Irlanda).
+    # Render no deja cambiarla después de crear el servicio.
+    region: frankfurt
     buildCommand: npm ci --include=dev
     startCommand: npm run api
     healthCheckPath: /health

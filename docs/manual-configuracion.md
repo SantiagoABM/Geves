@@ -981,9 +981,9 @@ En lugar de un VPS: la base va en **Supabase** y la API en **Render**. El panel 
 
 ### 12.1 Crear el proyecto de Supabase
 
-1. Crea un proyecto en [supabase.com](https://supabase.com). Elige la región **East US (North Virginia)**, la más cercana a la región `virginia` de Render que usa este proyecto. Supabase te pide una **contraseña de la base**: genera una larga y guárdala en tu gestor de contraseñas.
+1. Crea un proyecto en [supabase.com](https://supabase.com). Este proyecto usa la región **West EU (Ireland)**, `eu-west-1`; la región de Render más cercana es `frankfurt`, la que pone `render.yaml`. Si eliges otra región en Supabase, cambia `region` en `render.yaml` antes de crear el servicio, porque Render no deja cambiarla después. Supabase te pide una **contraseña de la base**: genera una larga y guárdala en tu gestor de contraseñas.
 2. **Desactiva la Data API** (en *Project Settings*, apartado *Data API*). Este proyecto no la usa, y así nadie puede leer tus tablas por esa vía. Además, `npm run db:roles` les quita los permisos a los roles públicos de Supabase (`anon` y `authenticated`), por si se te olvida.
-3. Pulsa **Connect** y, en **Session pooler**, copia la cadena de conexión (URI). Su usuario tiene la forma `postgres.<id-de-tu-proyecto>`. Usa el modo **sesión**, no el de transacción: la API necesita bloqueos que el modo transacción no admite.
+3. Pulsa **Connect** y, en **Session pooler**, copia la cadena de conexión (URI). Su usuario tiene la forma `postgres.<id-de-tu-proyecto>`. Usa el modo **sesión** (puerto **5432**), no el de transacción (puerto 6543): la API necesita bloqueos que el modo transacción no admite. Cambia `[YOUR-PASSWORD]`, corchetes incluidos, por la contraseña de la base.
 4. En esa misma ventana, descarga el **certificado SSL** del servidor y guárdalo como `secrets/supabase-ca.crt` dentro de la carpeta del proyecto. Sin él, la conexión no podría comprobar que habla con Supabase de verdad.
 
 ### 12.2 Crear las tablas y el usuario de la API (en tu PC)
