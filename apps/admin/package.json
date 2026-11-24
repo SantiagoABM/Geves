@@ -1,0 +1,14 @@
+{
+  "name": "@gk/admin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@gk/core": "*",
+    "@hono/node-server": "^2.1.11",
+    "hono": "^4.13.21"
+  }
+}
