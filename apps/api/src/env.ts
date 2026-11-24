@@ -4,6 +4,8 @@ import { z } from "zod";
 const Env = z
   .object({
     DATABASE_URL: z.string().url(),
+    /** Conexiones máximas a la base. En el pooler gratuito de Supabase conviene 5. */
+    DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
     SIGNING_PRIVATE_KEY: z.string().min(1).optional(),
     SIGNING_PRIVATE_KEY_FILE: z.string().min(1).optional(),
     SIGNING_KEY_ID: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),

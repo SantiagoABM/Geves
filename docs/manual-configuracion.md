@@ -15,6 +15,7 @@ Este manual explica cómo poner en marcha el servicio, administrarlo y conectar 
 9. [Operación y mantenimiento](#9-operación-y-mantenimiento)
 10. [Lista de comprobación de seguridad](#10-lista-de-comprobación-de-seguridad)
 11. [Para el usuario final](#11-para-el-usuario-final)
+12. [Publicar gratis en Render y Supabase](#12-publicar-gratis-en-render-y-supabase)
 
 ---
 
@@ -73,7 +74,7 @@ La configuración recomendada es la más segura sin coste extra:
 - **Firewall** con solo los puertos 22 (SSH), 80 y 443 abiertos.
 - **El panel** corre en tu PC y llega a la base por un **túnel SSH**.
 
-> **Alternativa:** una base PostgreSQL gestionada, como Neon o Supabase. En ese caso la conexión exige TLS y verifica el certificado del servidor (el proyecto lo hace solo para hosts que no son locales). Usa una contraseña larga para el usuario dueño y, si el proveedor lo permite, restringe las IP que pueden conectarse. La API puede seguir en el VPS.
+> **Alternativa gratuita:** la API en Render y la base en Supabase. Está explicada paso a paso en la [sección 12](#12-publicar-gratis-en-render-y-supabase).
 
 ### 3.1 Preparar el servidor
 
@@ -679,7 +680,7 @@ class License {
             'device_id': await _deviceId(),
             'platform': 'flutter',
             if (usageSeconds != null) 'usage_seconds': usageSeconds,
-          })).timeout(const Duration(seconds: 10));
+          })).timeout(const Duration(seconds: 60)); // Render gratis tarda en despertar
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (data['ok'] != true || await _tokenState(data['token']) == null) {
         lastMessage = (data['message'] as String?) ?? 'No se pudo verificar la licencia.';
@@ -741,7 +742,7 @@ public sealed class License
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MiApp");
     static readonly string DeviceFile = Path.Combine(Dir, "device-id");
     static readonly string LicenseFile = Path.Combine(Dir, "license.bin");
-    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) }; // Render gratis tarda en despertar
 
     static string DeviceId()
     {
@@ -960,3 +961,106 @@ Puedes copiar esta sección en la ayuda de tus apps.
 | App no autorizada | Problema de configuración de la app. | Contacta con soporte. |
 
 **Cambiar de dispositivo:** si cambias de móvil o de ordenador, pide a tu proveedor que libere el anterior. Después introduce la misma clave en el nuevo.
+
+## 12. Publicar gratis en Render y Supabase
+
+En lugar de un VPS: la base va en **Supabase** y la API en **Render**. El panel sigue en tu PC y se conecta directamente a Supabase, sin túnel SSH.
+
+```
+ TU PC (nunca publicado)              SUPABASE                     RENDER
+ ┌──────────────────────┐  TLS   ┌────────────────────┐  TLS  ┌──────────────────────┐
+ │ Panel 127.0.0.1:4000 │───────▶│ PostgreSQL         │◀──────│ API (usuario gk_api) │◀── tus apps
+ │ (usuario postgres)   │        │ (pooler, sesión)   │       │ https://….onrender.com│   (HTTPS)
+ └──────────────────────┘        └────────────────────┘       └──────────────────────┘
+```
+
+**Límites de los planes gratuitos** (compruébalos en sus webs, cambian con el tiempo):
+
+- **Render duerme** el servicio tras 15 minutos sin peticiones, y la siguiente tarda hasta un minuto en despertarlo. Las apps con token válido no lo notan; quien activa una clave en ese momento espera. Por eso los ejemplos del capítulo 7 esperan hasta 60 segundos. Para clientes que pagan, el plan de pago más barato de Render no duerme.
+- **Supabase gratis** tiene unos 500 MB de base y pausa los proyectos que pasan mucho tiempo sin actividad. Limpia el registro de verificaciones de vez en cuando (sección 6).
+
+### 12.1 Crear el proyecto de Supabase
+
+1. Crea un proyecto en [supabase.com](https://supabase.com). Elige la región **East US (North Virginia)**, la más cercana a la región `virginia` de Render que usa este proyecto. Supabase te pide una **contraseña de la base**: genera una larga y guárdala en tu gestor de contraseñas.
+2. **Desactiva la Data API** (en *Project Settings*, apartado *Data API*). Este proyecto no la usa, y así nadie puede leer tus tablas por esa vía. Además, `npm run db:roles` les quita los permisos a los roles públicos de Supabase (`anon` y `authenticated`), por si se te olvida.
+3. Pulsa **Connect** y, en **Session pooler**, copia la cadena de conexión (URI). Su usuario tiene la forma `postgres.<id-de-tu-proyecto>`. Usa el modo **sesión**, no el de transacción: la API necesita bloqueos que el modo transacción no admite.
+4. En esa misma ventana, descarga el **certificado SSL** del servidor y guárdalo como `secrets/supabase-ca.crt` dentro de la carpeta del proyecto. Sin él, la conexión no podría comprobar que habla con Supabase de verdad.
+
+### 12.2 Crear las tablas y el usuario de la API (en tu PC)
+
+En tu `.env`:
+
+```
+ADMIN_DATABASE_URL=postgresql://postgres.<id-de-tu-proyecto>:<CONTRASEÑA>@aws-0-<region>.pooler.supabase.com:5432/postgres
+# Ruta ABSOLUTA al certificado del paso anterior:
+DATABASE_CA_FILE=D:\ruta\al\proyecto\secrets\supabase-ca.crt
+API_DB_PASSWORD=
+```
+
+Si la contraseña tiene símbolos como `@`, `:` o `/`, en la URL van codificados (por ejemplo `@` se escribe `%40`).
+
+```powershell
+npm run db:migrate
+```
+
+```powershell
+npm run db:roles
+```
+
+`db:roles` imprime la `DATABASE_URL` de la API, con el usuario `gk_api.<id-de-tu-proyecto>` y la contraseña generada. Guárdala: la necesitas en Render. Copia también esa contraseña a `API_DB_PASSWORD` en tu `.env`, para que la próxima vez que ejecutes `db:roles` (tras una actualización) no la cambie.
+
+### 12.3 Claves de firma (en tu PC)
+
+Si todavía no las tienes:
+
+```powershell
+npm run keys:generate
+```
+
+Crea `secrets/signing-private.pem`, `secrets/signing-public.pem` y te sugiere un identificador, por ejemplo `k-20261124`.
+
+### 12.4 Crear el servicio en Render
+
+1. En [render.com](https://render.com), **New → Blueprint** y elige tu repositorio de GitHub. Render lee el archivo `render.yaml` del proyecto, que ya trae el comando de arranque, `HOST=0.0.0.0`, la versión de Node y el resto de ajustes.
+2. Render te pedirá dos valores:
+   - `DATABASE_URL`: la que imprimió `db:roles`.
+   - `SIGNING_KEY_ID`: el identificador de la clave de firma, por ejemplo `k-20261124`.
+3. Cuando el servicio exista, entra en él: **Environment → Secret Files** y añade dos archivos, copiando su contenido:
+   - `signing-private.pem`: el contenido de `secrets/signing-private.pem`.
+   - `supabase-ca.crt`: el contenido de `secrets/supabase-ca.crt`.
+
+   Render los deja en `/etc/secrets/`, que es donde los busca el `render.yaml`.
+4. Pulsa **Manual Deploy → Deploy latest commit**. El primer despliegue puede haber fallado porque faltaban esos archivos; es normal.
+
+### 12.5 Comprobar
+
+Abre `https://<tu-servicio>.onrender.com/health` en el navegador. Debe responder `{"ok":true}`. Si falla, mira **Logs** en Render: si falta algo, el mensaje dice qué variable revisar.
+
+### 12.6 Comprobar que la IP registrada es la real
+
+El límite de intentos se basa en la IP. Hay que comprobar que nadie puede falsificarla con la cabecera `X-Forwarded-For`. Desde tu PC envía una petición que finge venir de la IP `203.0.113.77`:
+
+```powershell
+try { Invoke-RestMethod -Method Post -Uri "https://<tu-servicio>.onrender.com/v1/verify" -ContentType "application/json" -Headers @{ "X-Forwarded-For" = "203.0.113.77" } -Body '{"app_id":"prueba-ip","license_key":"x","device_id":"device-prueba-ip"}' } catch { $_.ErrorDetails.Message }
+```
+
+Responderá `invalid_client`, y es lo esperado. Después, en Supabase, abre **SQL Editor** y ejecuta:
+
+```sql
+select ip, at from verification_log where device_id = 'device-prueba-ip' order by at desc limit 1;
+```
+
+- Si aparece **tu IP pública real**: todo bien.
+- Si aparece **`203.0.113.77`**: la IP se puede falsificar. No publiques tus apps todavía; hay que cambiar `TRUSTED_IP_HEADER` y repetir la prueba.
+
+### 12.7 Conectar tus apps
+
+La URL de la API es `https://<tu-servicio>.onrender.com`, o tu propio dominio si lo añades en Render (**Settings → Custom Domains**). El resto es igual que en el capítulo 7.
+
+### 12.8 Mantenimiento
+
+- **Actualizar:** al subir cambios a GitHub (`git push`), Render vuelve a desplegar solo. Si la actualización trae migraciones, ejecuta antes `npm run db:migrate` y `npm run db:roles` desde tu PC.
+- **Copias de seguridad:** revisa qué copias incluye tu plan de Supabase. Si quieres una propia y tienes las herramientas de PostgreSQL instaladas, `pg_dump` funciona con la misma `ADMIN_DATABASE_URL`.
+- **Tu `.env` tiene ahora la contraseña del usuario dueño de una base accesible desde internet.** Protégelo como una contraseña y nunca lo subas a Git (ya está en `.gitignore`).
+
+**Comprobación de seguridad para este modo:** Data API desactivada, `DATABASE_CA_FILE` configurado en tu PC y en Render, los dos Secret Files en Render, `DATABASE_URL` de Render con el usuario `gk_api` (nunca `postgres`) y la prueba de IP de la sección 12.6 superada.

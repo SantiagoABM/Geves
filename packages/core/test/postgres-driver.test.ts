@@ -27,7 +27,8 @@ let db: Db;
 
 beforeAll(async () => {
   pg = new PGlite();
-  const port = 55_000 + Math.floor(Math.random() * 5_000);
+  // Fuera del rango dinámico (49152+), donde Windows reserva bloques de puertos y listen da EACCES.
+  const port = 40_000 + Math.floor(Math.random() * 5_000);
   server = new PGLiteSocketServer({ db: pg, port, host: "127.0.0.1" });
   await server.start();
   const url = `postgres://postgres:postgres@127.0.0.1:${port}/postgres`;

@@ -1,0 +1,32 @@
+# Blueprint de Render para la API pública (manual, sección 12).
+# Los secretos NO van aquí: Render los pide al crear el servicio (sync: false)
+# y los dos archivos van como "Secret Files" en el panel de Render.
+services:
+  - type: web
+    name: gestor-de-claves-api
+    runtime: node
+    plan: free
+    # Elige la región más cercana a la de tu proyecto de Supabase (virginia ↔ us-east-1).
+    region: virginia
+    buildCommand: npm ci --include=dev
+    startCommand: npm run api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # Render pone la variable PORT; la API debe escuchar en todas las interfaces.
+      - key: HOST
+        value: 0.0.0.0
+      # Comprobado tras el despliegue (manual 12.6). Cámbiala si la prueba falla.
+      - key: TRUSTED_IP_HEADER
+        value: x-forwarded-for
+      - key: DATABASE_POOL_MAX
+        value: "5"
+      - key: DATABASE_CA_FILE
+        value: /etc/secrets/supabase-ca.crt
+      - key: SIGNING_PRIVATE_KEY_FILE
+        value: /etc/secrets/signing-private.pem
+      - key: SIGNING_KEY_ID
+        sync: false
+      - key: DATABASE_URL
+        sync: false

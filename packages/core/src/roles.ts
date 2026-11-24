@@ -29,6 +29,28 @@ export async function applyApiRoleGrants(db: Db, password: string): Promise<void
     `GRANT SELECT, INSERT, UPDATE ON devices TO ${API_ROLE}`,
     `GRANT SELECT, INSERT ON verification_log TO ${API_ROLE}`,
     `GRANT USAGE ON SEQUENCE verification_log_id_seq TO ${API_ROLE}`,
+    // Supabase publica el esquema public por su API REST con los roles anon y authenticated,
+    // y les da permisos por defecto sobre las tablas nuevas. Aquí no se usa esa API: se los quitamos.
+    `DO $$ DECLARE r text; BEGIN
+       FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+           EXECUTE format('REVOKE ALL ON apps, license_keys, devices, verification_log FROM %I', r);
+           EXECUTE format('REVOKE ALL ON SEQUENCE verification_log_id_seq FROM %I', r);
+         END IF;
+       END LOOP;
+     END $$`,
   ];
   for (const s of statements) await db.execute(sql.raw(s));
+}
+
+/**
+ * URL de conexión de la API a partir de la del dueño: mismo host y base, usuario gk_api.
+ * En el pooler de Supabase el usuario lleva el proyecto (`postgres.<ref>`): se conserva el sufijo.
+ * Sin contraseña, deja el marcador `<API_DB_PASSWORD>`.
+ */
+export function apiDatabaseUrl(adminUrl: string, password: string | null): string {
+  const u = new URL(adminUrl);
+  const user = decodeURIComponent(u.username);
+  const suffix = user.includes(".") ? user.slice(user.indexOf(".")) : "";
+  return `${u.protocol}//${API_ROLE}${suffix}:${password ?? "<API_DB_PASSWORD>"}@${u.host}${u.pathname}${u.search}`;
 }

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { applyApiRoleGrants, apps, devices, licenseKeys, sslFor } from "../src/index.ts";
+import { apiDatabaseUrl, applyApiRoleGrants, apps, devices, licenseKeys, sslFor } from "../src/index.ts";
 import { createTestDb } from "../src/testing.ts";
 
 /** Drizzle envuelve el error de PostgreSQL; el mensaje original está en `cause`. */
@@ -37,6 +37,28 @@ describe("sslFor", () => {
 
   it("respeta un sslmode explícito en la URL", () => {
     expect(sslFor("postgres://u:p@db.example.com/db?sslmode=disable")).toBeUndefined();
+  });
+
+  it("con certificado raíz propio (Supabase) verifica contra ese certificado", () => {
+    const ca = "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\n";
+    expect(sslFor("postgres://u:p@aws-0-us-east-1.pooler.supabase.com:5432/postgres", ca)).toEqual({
+      ca,
+      rejectUnauthorized: true,
+    });
+  });
+});
+
+describe("apiDatabaseUrl", () => {
+  it("usa el mismo host y base con el usuario gk_api", () => {
+    expect(apiDatabaseUrl("postgres://gk_owner:secreto@127.0.0.1:5433/gestor", "PWD")).toBe(
+      "postgres://gk_api:PWD@127.0.0.1:5433/gestor",
+    );
+  });
+
+  it("en el pooler de Supabase conserva el sufijo del proyecto (gk_api.<ref>)", () => {
+    expect(
+      apiDatabaseUrl("postgres://postgres.abcdefghijklmnopqrst:x@aws-0-us-east-1.pooler.supabase.com:5432/postgres", null),
+    ).toBe("postgres://gk_api.abcdefghijklmnopqrst:<API_DB_PASSWORD>@aws-0-us-east-1.pooler.supabase.com:5432/postgres");
   });
 });
 
@@ -89,6 +111,20 @@ describe("applyApiRoleGrants", () => {
     } finally {
       await pg.exec("RESET ROLE");
     }
+  });
+
+  it("en Supabase quita a anon y authenticated el acceso a las tablas (su API REST)", async () => {
+    const { db, pg } = await seed();
+    await pg.exec(`
+      CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;
+      GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+      GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;`);
+    await applyApiRoleGrants(db, "a".repeat(32));
+    const r = (await db.execute(sql`
+      select count(*)::int as n from (values ('anon'), ('authenticated')) as r(role),
+        (values ('apps'), ('license_keys'), ('devices'), ('verification_log')) as t(tbl)
+      where has_table_privilege(r.role, t.tbl, 'SELECT, INSERT, UPDATE, DELETE')`)) as { rows: { n: number }[] };
+    expect(r.rows[0]!.n).toBe(0);
   });
 
   it("se puede aplicar dos veces (cambia la contraseña)", async () => {

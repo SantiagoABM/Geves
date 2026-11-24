@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createApiApp } from "./app.ts";
 import { loadApiEnv } from "./env.ts";
 
-// En desarrollo lee el .env de la raíz del repo; en producción las variables vienen del sistema (systemd).
+// En desarrollo lee el .env de la raíz del repo; en producción las variables vienen del sistema (systemd, Render).
 const envFile = fileURLToPath(new URL("../../../.env", import.meta.url));
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
@@ -17,7 +17,7 @@ const signer = await createTokenSigner({
   ttlSeconds: env.TOKEN_TTL_DAYS * 86_400,
 });
 const app = createApiApp({
-  db: createPostgresDb(env.DATABASE_URL),
+  db: createPostgresDb(env.DATABASE_URL, env.DATABASE_POOL_MAX),
   signer,
   ...(env.TRUSTED_IP_HEADER ? { ipHeader: env.TRUSTED_IP_HEADER } : {}),
 });

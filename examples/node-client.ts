@@ -98,7 +98,8 @@ async function askServer(o: CheckLicenseOptions, licenseKey: string): Promise<Se
         ...(o.appVersion ? { app_version: o.appVersion } : {}),
         ...(o.usageSeconds ? { usage_seconds: Math.max(0, Math.floor(o.usageSeconds())) } : {}),
       }),
-      signal: AbortSignal.timeout(10_000),
+      // 60 s: un servidor gratuito dormido (Render) tarda hasta un minuto en despertar.
+      signal: AbortSignal.timeout(60_000),
     });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; token?: string; error?: string; message?: string };
     if (res.ok && data.ok && data.token) {
