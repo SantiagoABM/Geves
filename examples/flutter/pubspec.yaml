@@ -1,0 +1,21 @@
+# Paquete de ejemplo: solo sirve para analizar y probar el cliente de licencias.
+# Para usarlo en tu app, copia lib/license/ (manual de apps, sección 3).
+name: gk_license_example
+description: Cliente de licencias del gestor de claves para Flutter (ejemplo probado).
+publish_to: none
+version: 1.0.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.6.0
+  dart_jsonwebtoken: ^3.4.1
+  flutter_secure_storage: ^11.2.0
+  uuid: ^4.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

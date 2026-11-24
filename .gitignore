@@ -8,3 +8,10 @@ secrets/
 docs/superpowers/
 .claude/
 *.log
+
+# Flutter (examples/flutter)
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+examples/flutter/build/
+examples/flutter/pubspec.lock

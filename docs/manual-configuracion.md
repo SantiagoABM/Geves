@@ -506,208 +506,17 @@ app.use((req, res, next) => (licensed ? next() : res.status(403).json({ error: "
 
 **Next.js:** valida en el servidor, nunca solo en el navegador. Llama a `checkLicense` en `instrumentation.ts` (`register()`) y guarda el resultado en un módulo. En `middleware.ts` o en tus Route Handlers, responde 403 si no hay licencia.
 
-### 7.4 Angular (y cualquier app que corre en el navegador)
+### 7.4 Apps web (Angular, React, Vue…)
 
-> **No probado en este repositorio.** Todo el código del navegador lo puede leer y modificar el usuario. Esta comprobación disuade, pero no protege de verdad. La protección real está en tu backend.
+Usa [`examples/web/license.ts`](../examples/web/license.ts), probado contra la API en este repositorio (`examples/web/license.test.ts`). La guía paso a paso, con el guard de Angular, un componente de React y las reglas de CORS, está en el [manual de apps, sección 4](manual-apps.md#4-web-angular-react-vue).
 
-Instala `jose`:
+> Todo el código del navegador lo puede leer y modificar el usuario. Esta comprobación disuade, pero no protege de verdad. La protección real está en tu backend.
 
-```powershell
-npm install jose
-```
-
-```ts
-import { Injectable } from "@angular/core";
-import { importSPKI, jwtVerify } from "jose";
-
-const API = "https://licencias.tudominio.com";
-const APP_ID = "mi-app-angular";
-const APP_KEY = "gkapp_…";
-const ISSUER = "gestor-de-claves";
-const PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
-…contenido de signing-public.pem…
------END PUBLIC KEY-----`;
-const GRACE = 3 * 86400;
-const RENEW_BEFORE = 2 * 86400;
-
-@Injectable({ providedIn: "root" })
-export class LicenseService {
-  private deviceId(): string {
-    let id = localStorage.getItem("gk_device_id");
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem("gk_device_id", id);
-    }
-    return id;
-  }
-
-  /** Último motivo de rechazo, para mostrarlo en la pantalla de activación. */
-  lastMessage = "";
-
-  /** null si el token no vale; si vale, los segundos que le quedan y si ya llega al fin de la licencia. */
-  private async tokenState(token: string): Promise<{ left: number; reachesEnd: boolean } | null> {
-    try {
-      const key = await importSPKI(PUBLIC_KEY_PEM, "ES256");
-      const { payload } = await jwtVerify(token, key, {
-        algorithms: ["ES256"], issuer: ISSUER, audience: APP_ID, clockTolerance: GRACE,
-      });
-      if (payload["device_id"] !== this.deviceId()) return null;
-      const now = Math.floor(Date.now() / 1000);
-      const licExp = typeof payload["lic_exp"] === "number" ? (payload["lic_exp"] as number) : null;
-      if (licExp !== null && now >= licExp) return null; // licencia vencida: sin gracia
-      return { left: payload.exp! - now, reachesEnd: licExp !== null && payload.exp! >= licExp };
-    } catch { return null; }
-  }
-
-  /** Devuelve null si todo va bien, o el código de error (el motivo queda en lastMessage). */
-  async activate(licenseKey: string): Promise<string | null> {
-    try {
-      const usage = Number(localStorage.getItem("gk_usage_seconds") ?? "0"); // si llevas la cuenta
-      const res = await fetch(`${API}/v1/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-App-Key": APP_KEY },
-        body: JSON.stringify({
-          app_id: APP_ID, license_key: licenseKey, device_id: this.deviceId(),
-          platform: "web", usage_seconds: Math.floor(usage),
-        }),
-      });
-      const data = await res.json();
-      if (!data.ok || (await this.tokenState(data.token)) === null) {
-        this.lastMessage = data.message ?? "No se pudo verificar la licencia.";
-        return data.error ?? "invalid_token";
-      }
-      localStorage.setItem("gk_license", JSON.stringify({ licenseKey, token: data.token }));
-      return null;
-    } catch {
-      this.lastMessage = "No se pudo conectar con el servidor de licencias. Revisa tu conexión.";
-      return "network_error";
-    }
-  }
-
-  /** true si la app puede seguir. Llamar al arrancar (APP_INITIALIZER) o en un guard de rutas. */
-  async check(): Promise<boolean> {
-    const saved = JSON.parse(localStorage.getItem("gk_license") ?? "null");
-    if (!saved) return false;
-    const state = await this.tokenState(saved.token);
-    if (state !== null && (state.left > RENEW_BEFORE || state.reachesEnd)) return true;
-    const err = await this.activate(saved.licenseKey);
-    if (err === null || (state !== null && err === "network_error")) return true;
-    if (err !== "network_error") localStorage.removeItem("gk_license");
-    return false;
-  }
-}
-```
-
-La URL registrada de la app en el panel debe ser la del sitio Angular, por ejemplo `https://app.tudominio.com`. Si no, el navegador bloqueará la llamada (CORS).
+La URL registrada de la app en el panel debe ser exactamente el origen del sitio, por ejemplo `https://app.tudominio.com`. Si no, el navegador bloqueará la llamada (CORS).
 
 ### 7.5 Flutter
 
-> **No probado en este repositorio.**
-
-Dependencias en `pubspec.yaml`:
-
-```yaml
-dependencies:
-  http: ^1.2.0
-  dart_jsonwebtoken: ^2.14.0
-  flutter_secure_storage: ^9.2.0
-  uuid: ^4.4.0
-```
-
-```dart
-import 'dart:convert';
-import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
-
-const api = 'https://licencias.tudominio.com';
-const appId = 'mi-app-flutter';
-const appKey = 'gkapp_…';
-const issuer = 'gestor-de-claves';
-const publicKeyPem = '''-----BEGIN PUBLIC KEY-----
-…contenido de signing-public.pem…
------END PUBLIC KEY-----''';
-const grace = Duration(days: 3);
-const renewBefore = Duration(days: 2);
-
-class License {
-  final _storage = const FlutterSecureStorage();
-
-  Future<String> _deviceId() async {
-    var id = await _storage.read(key: 'gk_device_id');
-    if (id == null) {
-      id = const Uuid().v4();
-      await _storage.write(key: 'gk_device_id', value: id);
-    }
-    return id;
-  }
-
-  /// Último motivo de rechazo, para mostrarlo en la pantalla de activación.
-  String lastMessage = '';
-
-  /// null si el token no vale; si vale, el tiempo que le queda (negativo en la gracia)
-  /// y si ya llega al vencimiento de la licencia.
-  Future<({Duration left, bool reachesEnd})?> _tokenState(String token) async {
-    try {
-      final jwt = JWT.verify(token, ECPublicKey(publicKeyPem), checkExpiresIn: false, issuer: issuer);
-      final p = jwt.payload as Map<String, dynamic>;
-      final aud = p['aud'];
-      if (aud != appId && !(aud is List && aud.contains(appId))) return null;
-      if (p['device_id'] != await _deviceId()) return null;
-      final now = DateTime.now();
-      final expSec = p['exp'] as int;
-      final licExpSec = p['lic_exp'] as int?;
-      // Licencia vencida: sin gracia, aunque no haya red.
-      if (licExpSec != null && !now.isBefore(DateTime.fromMillisecondsSinceEpoch(licExpSec * 1000))) return null;
-      final left = DateTime.fromMillisecondsSinceEpoch(expSec * 1000).difference(now);
-      if (left + grace <= Duration.zero) return null;
-      return (left: left, reachesEnd: licExpSec != null && expSec >= licExpSec);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// null si va bien; si no, el código de error (el motivo queda en lastMessage).
-  /// usageSeconds: total de segundos de uso desde la instalación, si llevas la cuenta.
-  Future<String?> activate(String licenseKey, {int? usageSeconds}) async {
-    try {
-      final res = await http.post(Uri.parse('$api/v1/verify'),
-          headers: {'Content-Type': 'application/json', 'X-App-Key': appKey},
-          body: jsonEncode({
-            'app_id': appId,
-            'license_key': licenseKey,
-            'device_id': await _deviceId(),
-            'platform': 'flutter',
-            if (usageSeconds != null) 'usage_seconds': usageSeconds,
-          })).timeout(const Duration(seconds: 60)); // Render gratis tarda en despertar
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      if (data['ok'] != true || await _tokenState(data['token']) == null) {
-        lastMessage = (data['message'] as String?) ?? 'No se pudo verificar la licencia.';
-        return (data['error'] as String?) ?? 'invalid_token';
-      }
-      await _storage.write(key: 'gk_license', value: jsonEncode({'licenseKey': licenseKey, 'token': data['token']}));
-      return null;
-    } catch (_) {
-      lastMessage = 'No se pudo conectar con el servidor de licencias. Revisa tu conexión.';
-      return 'network_error';
-    }
-  }
-
-  /// true si la app puede seguir. Si es false, muestra lastMessage y la pantalla para introducir la clave.
-  Future<bool> check({int? usageSeconds}) async {
-    final raw = await _storage.read(key: 'gk_license');
-    if (raw == null) return false;
-    final saved = jsonDecode(raw) as Map<String, dynamic>;
-    final state = await _tokenState(saved['token']);
-    if (state != null && (state.left > renewBefore || state.reachesEnd)) return true;
-    final err = await activate(saved['licenseKey'], usageSeconds: usageSeconds);
-    if (err == null || (state != null && err == 'network_error')) return true;
-    if (err != 'network_error') await _storage.delete(key: 'gk_license');
-    return false;
-  }
-}
-```
+Usa los archivos de [`examples/flutter/lib/license/`](../examples/flutter/lib/license), probados contra la API con Flutter (Dart 3.13), `dart_jsonwebtoken` 3.4 y `flutter_secure_storage` 11.2. La guía paso a paso (dependencias, `LicenseGate`, permiso de internet en Android, compilación con `--dart-define`) está en el [manual de apps, sección 3](manual-apps.md#3-flutter-android-e-ios).
 
 ### 7.6 .NET
 
@@ -1062,7 +871,7 @@ Repite esta prueba si cambias de proveedor o añades un dominio propio.
 
 ### 12.7 Conectar tus apps
 
-La URL de la API es `https://<tu-servicio>.onrender.com`, o tu propio dominio si lo añades en Render (**Settings → Custom Domains**). El resto es igual que en el capítulo 7.
+La URL de la API es `https://<tu-servicio>.onrender.com`, o tu propio dominio si lo añades en Render (**Settings → Custom Domains**). El resto es igual que en el capítulo 7. La guía paso a paso para Flutter, web y backend, con una lista de pruebas, está en el [manual de apps](manual-apps.md).
 
 ### 12.8 Que no se duerma (cron-job.org)
 
