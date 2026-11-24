@@ -5,4 +5,6 @@ dist/
 !.env.example
 secrets/
 .superpowers/
+docs/superpowers/
+.claude/
 *.log
