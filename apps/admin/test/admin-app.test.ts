@@ -149,6 +149,68 @@ describe("vencimientos", () => {
   });
 });
 
+describe("diseño del panel", () => {
+  const DAY = 86_400_000;
+  const day = (offsetDays: number) => {
+    const d = new Date(Date.now() + offsetDays * DAY);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+
+  async function pages() {
+    const { app } = await createApp(db, { slug: `panel-${++n}`, name: "App Diseño", url: "https://d.example" });
+    await post(`/apps/${app.id}/keys`, { label: "Cliente", max_devices: "1" });
+    const [row] = await db.select().from(licenseKeys).where(eq(licenseKeys.appId, app.id));
+    return { app, row: row!, paths: ["/", `/apps/${app.id}`, `/keys/${row!.id}`, "/log"] };
+  }
+
+  it("la barra lateral lista las apps en todas las páginas", async () => {
+    const { paths } = await pages();
+    for (const p of paths) {
+      const html = await (await admin.request(`${BASE}${p}`)).text();
+      expect(html, p).toContain('class="sidebar"');
+      expect(html, p).toContain("App Diseño");
+    }
+  });
+
+  it("sin estilos ni scripts en línea (la CSP los bloquearía)", async () => {
+    const { app, paths } = await pages();
+    const shown = await (await post(`/apps/${app.id}/keys`, { label: "Otra", max_devices: "1" })).text();
+    const htmls = [shown, ...(await Promise.all(paths.map(async (p) => (await admin.request(`${BASE}${p}`)).text())))];
+    for (const html of htmls) {
+      expect(html).not.toContain("style=");
+      expect(html).not.toContain("<style");
+      expect(html).not.toMatch(/<script(?![^>]*\bsrc=)/);
+    }
+  });
+
+  it("zona de peligro: desactivar app y revocar solo si la clave está activa", async () => {
+    const { app, row } = await pages();
+    const appHtml = await (await admin.request(`${BASE}/apps/${app.id}`)).text();
+    expect(appHtml).toContain("Zona de peligro");
+    expect(appHtml).toContain("Desactivar app");
+    expect(await (await admin.request(`${BASE}/keys/${row.id}`)).text()).toContain("Revocar clave");
+    await post(`/keys/${row.id}/revoke`, { confirm: "yes" });
+    expect(await (await admin.request(`${BASE}/keys/${row.id}`)).text()).not.toContain("Revocar clave");
+  });
+
+  it("etiqueta «Vence pronto» solo a una semana o menos", async () => {
+    const soon = await keyFromPanel({ expires_at: day(3) });
+    const later = await keyFromPanel({ expires_at: day(30) });
+    expect(await (await admin.request(`${BASE}/apps/${soon.appId}`)).text()).toContain("Vence pronto");
+    expect(await (await admin.request(`${BASE}/apps/${later.appId}`)).text()).not.toContain("Vence pronto");
+  });
+
+  it("sirve /app.js y la clave generada tiene botón de copiar", async () => {
+    const js = await admin.request(`${BASE}/app.js`);
+    expect(js.status).toBe(200);
+    expect(js.headers.get("content-type")).toContain("javascript");
+    const { app } = await createApp(db, { slug: `panel-${++n}`, name: "Demo", url: "https://demo.example" });
+    const html = await (await post(`/apps/${app.id}/keys`, { label: "Cliente", max_devices: "1" })).text();
+    expect(html).toContain('src="/app.js"');
+    expect(html).toContain("data-copy");
+  });
+});
+
 describe("registro de verificaciones", () => {
   const today = new Date("2026-11-24T12:00:00");
   let logAdmin: ReturnType<typeof createAdminApp>;

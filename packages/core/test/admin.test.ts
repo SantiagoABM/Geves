@@ -7,8 +7,10 @@ import {
   createLicenseKey,
   hashSecret,
   licenseKeys,
+  listApps,
   listLicenseKeys,
   removeDevice,
+  revokeLicenseKey,
   verifyLicense,
   type Db,
 } from "../src/index.ts";
@@ -65,6 +67,28 @@ describe("createLicenseKey", () => {
   });
 });
 
+describe("listApps", () => {
+  it("listApps cuenta claves activas y dispositivos activos", async () => {
+    const s = slug();
+    const now = new Date();
+    const { app, appKey } = await createApp(db, { slug: s, name: "Cifras", url: "https://cifras.test" });
+    const { licenseKey } = await createLicenseKey(db, { appId: app.id, label: "Activa", maxDevices: 5 });
+    const revoked = await createLicenseKey(db, { appId: app.id, label: "Revocada", maxDevices: 5 });
+    for (const d of ["device-c001", "device-c002", "device-c003"]) {
+      await verifyLicense(db, { appSlug: s, appKey, licenseKey, deviceId: d }, { ip: "9.9.9.2", now });
+    }
+    await verifyLicense(db, { appSlug: s, appKey, licenseKey: revoked.licenseKey, deviceId: "device-c009" }, { ip: "9.9.9.2", now });
+    await revokeLicenseKey(db, revoked.key.id, now);
+    const gone = await db.query.devices.findFirst({ where: (t, { eq }) => eq(t.deviceId, "device-c003") });
+    await removeDevice(db, gone!.id);
+    const empty = await createApp(db, { slug: slug(), name: "Vacía", url: "https://vacia.test" });
+
+    const list = await listApps(db);
+    expect(list.find((a) => a.id === app.id)).toMatchObject({ activeKeys: 1, activeDevices: 2 });
+    expect(list.find((a) => a.id === empty.app.id)).toMatchObject({ activeKeys: 0, activeDevices: 0 });
+  });
+});
+
 describe("listLicenseKeys", () => {
   it("cuenta dispositivos activos", async () => {
     const s = slug();
@@ -72,7 +96,7 @@ describe("listLicenseKeys", () => {
     const { key, licenseKey } = await createLicenseKey(db, { appId: app.id, label: "Cliente" });
     await verifyLicense(db, { appSlug: s, appKey, licenseKey, deviceId: "device-0001" }, { ip: "9.9.9.1", now: new Date() });
     expect((await listLicenseKeys(db, app.id))[0]!.activeDevices).toBe(1);
-    const detail = await db.query.devices.findFirst();
+    const detail = await db.query.devices.findFirst({ where: (t, { eq }) => eq(t.deviceId, "device-0001") });
     await removeDevice(db, detail!.id);
     expect((await listLicenseKeys(db, app.id)).find((k) => k.id === key.id)!.activeDevices).toBe(0);
   });

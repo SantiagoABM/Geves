@@ -31,6 +31,7 @@ import {
   LicenseKeyShownPage,
   LogPage,
   MessagePage,
+  SCRIPT,
   STYLE,
 } from "./views.tsx";
 
@@ -71,8 +72,12 @@ export function createAdminApp(d: AdminDeps) {
   });
 
   app.get("/style.css", (c) => c.body(STYLE, 200, { "Content-Type": "text/css; charset=utf-8" }));
+  app.get("/app.js", (c) => c.body(SCRIPT, 200, { "Content-Type": "text/javascript; charset=utf-8" }));
 
-  app.get("/", async (c) => c.html(<HomePage apps={await listApps(db)} />));
+  /** Apps para la barra lateral (y el inicio). */
+  const nav = () => listApps(db);
+
+  app.get("/", async (c) => c.html(<HomePage apps={await nav()} />));
 
   app.post("/apps", async (c) => {
     const b = await c.req.parseBody();
@@ -82,9 +87,9 @@ export function createAdminApp(d: AdminDeps) {
         name: field(b, "name"),
         url: field(b, "url"),
       });
-      return c.html(<AppKeyShownPage app={created} appKey={appKey} rotated={false} />);
+      return c.html(<AppKeyShownPage apps={await nav()} app={created} appKey={appKey} rotated={false} />);
     } catch (e) {
-      if (e instanceof AdminInputError) return c.html(<HomePage apps={await listApps(db)} error={e.message} />, 400);
+      if (e instanceof AdminInputError) return c.html(<HomePage apps={await nav()} error={e.message} />, 400);
       throw e;
     }
   });
@@ -92,7 +97,7 @@ export function createAdminApp(d: AdminDeps) {
   app.get("/apps/:id", async (c) => {
     const a = await getApp(db, c.req.param("id"));
     if (!a) return c.notFound();
-    return c.html(<AppPage app={a} keys={await listLicenseKeys(db, a.id)} />);
+    return c.html(<AppPage apps={await nav()} app={a} keys={await listLicenseKeys(db, a.id)} />);
   });
 
   app.post("/apps/:id/keys", async (c) => {
@@ -107,10 +112,10 @@ export function createAdminApp(d: AdminDeps) {
         expiresAt: endOfDay(field(b, "expires_at")),
         deviceValidityDays: optionalInt(field(b, "device_validity_days")),
       });
-      return c.html(<LicenseKeyShownPage app={a} row={key} licenseKey={licenseKey} />);
+      return c.html(<LicenseKeyShownPage apps={await nav()} app={a} row={key} licenseKey={licenseKey} />);
     } catch (e) {
       if (e instanceof AdminInputError) {
-        return c.html(<AppPage app={a} keys={await listLicenseKeys(db, a.id)} error={e.message} />, 400);
+        return c.html(<AppPage apps={await nav()} app={a} keys={await listLicenseKeys(db, a.id)} error={e.message} open="key" />, 400);
       }
       throw e;
     }
@@ -120,10 +125,13 @@ export function createAdminApp(d: AdminDeps) {
     const a = await getApp(db, c.req.param("id"));
     if (!a) return c.notFound();
     if (field(await c.req.parseBody(), "confirm") !== "yes") {
-      return c.html(<AppPage app={a} keys={await listLicenseKeys(db, a.id)} error="Marca la casilla para confirmar." />, 400);
+      return c.html(
+        <AppPage apps={await nav()} app={a} keys={await listLicenseKeys(db, a.id)} error="Marca la casilla para confirmar." open="rotate" />,
+        400,
+      );
     }
     const appKey = await rotateAppKey(db, a.id, now());
-    return c.html(<AppKeyShownPage app={(await getApp(db, a.id))!} appKey={appKey} rotated={true} />);
+    return c.html(<AppKeyShownPage apps={await nav()} app={(await getApp(db, a.id))!} appKey={appKey} rotated={true} />);
   });
 
   app.post("/apps/:id/active", async (c) => {
@@ -136,7 +144,7 @@ export function createAdminApp(d: AdminDeps) {
   app.get("/keys/:id", async (c) => {
     const detail = await getLicenseKeyDetail(db, c.req.param("id"));
     if (!detail) return c.notFound();
-    return c.html(<LicenseKeyPage app={detail.app} row={detail.key} devices={detail.devices} />);
+    return c.html(<LicenseKeyPage apps={await nav()} app={detail.app} row={detail.key} devices={detail.devices} />);
   });
 
   app.post("/keys/:id/revoke", async (c) => {
@@ -144,7 +152,7 @@ export function createAdminApp(d: AdminDeps) {
     if (!detail) return c.notFound();
     if (field(await c.req.parseBody(), "confirm") !== "yes") {
       return c.html(
-        <LicenseKeyPage app={detail.app} row={detail.key} devices={detail.devices} error="Marca la casilla para confirmar." />,
+        <LicenseKeyPage apps={await nav()} app={detail.app} row={detail.key} devices={detail.devices} error="Marca la casilla para confirmar." />,
         400,
       );
     }
@@ -159,7 +167,7 @@ export function createAdminApp(d: AdminDeps) {
       await setMaxDevices(db, detail.key.id, Number(field(await c.req.parseBody(), "max_devices")));
     } catch (e) {
       if (e instanceof AdminInputError) {
-        return c.html(<LicenseKeyPage app={detail.app} row={detail.key} devices={detail.devices} error={e.message} />, 400);
+        return c.html(<LicenseKeyPage apps={await nav()} app={detail.app} row={detail.key} devices={detail.devices} error={e.message} open="settings" />, 400);
       }
       throw e;
     }
@@ -177,7 +185,7 @@ export function createAdminApp(d: AdminDeps) {
       });
     } catch (e) {
       if (e instanceof AdminInputError) {
-        return c.html(<LicenseKeyPage app={detail.app} row={detail.key} devices={detail.devices} error={e.message} />, 400);
+        return c.html(<LicenseKeyPage apps={await nav()} app={detail.app} row={detail.key} devices={detail.devices} error={e.message} open="settings" />, 400);
       }
       throw e;
     }
@@ -190,13 +198,13 @@ export function createAdminApp(d: AdminDeps) {
       keyId = await setDeviceExpiry(db, c.req.param("id"), endOfDay(field(await c.req.parseBody(), "expires_at")));
     } catch (e) {
       if (!(e instanceof AdminInputError)) throw e;
-      return c.html(<MessagePage title="Fecha no válida" message={e.message} />, 400);
+      return c.html(<MessagePage apps={await nav()} title="Fecha no válida" message={e.message} />, 400);
     }
     if (!keyId) return c.notFound();
     return c.redirect(`/keys/${keyId}`, 303);
   });
 
-  app.get("/log", async (c) => c.html(<LogPage summary={await logSummary(db)} />));
+  app.get("/log", async (c) => c.html(<LogPage apps={await nav()} summary={await logSummary(db)} />));
 
   app.get("/log/export", async (c) => {
     const until = (c.req.query("until") ?? "").trim(); // validado por logCutoff antes de ir en la cabecera
@@ -204,7 +212,7 @@ export function createAdminApp(d: AdminDeps) {
     try {
       cutoff = logCutoff(until, now());
     } catch (e) {
-      if (e instanceof AdminInputError) return c.html(<LogPage summary={await logSummary(db)} error={e.message} />, 400);
+      if (e instanceof AdminInputError) return c.html(<LogPage apps={await nav()} summary={await logSummary(db)} error={e.message} />, 400);
       throw e;
     }
     const { csv } = await exportVerificationLogCsv(db, cutoff);
@@ -220,9 +228,9 @@ export function createAdminApp(d: AdminDeps) {
       const cutoff = logCutoff(field(b, "until"), now());
       if (field(b, "confirm") !== "yes") throw new AdminInputError("Marca la casilla para confirmar.");
       const deleted = await deleteVerificationLog(db, cutoff);
-      return c.html(<LogPage summary={await logSummary(db)} deleted={deleted} />);
+      return c.html(<LogPage apps={await nav()} summary={await logSummary(db)} deleted={deleted} />);
     } catch (e) {
-      if (e instanceof AdminInputError) return c.html(<LogPage summary={await logSummary(db)} error={e.message} />, 400);
+      if (e instanceof AdminInputError) return c.html(<LogPage apps={await nav()} summary={await logSummary(db)} error={e.message} />, 400);
       throw e;
     }
   });
@@ -238,7 +246,9 @@ export function createAdminApp(d: AdminDeps) {
     return c.redirect(`/keys/${keyId}`, 303);
   });
 
-  app.notFound((c) => c.html(<MessagePage title="No encontrado" message="Esa página no existe." />, 404));
+  app.notFound(async (c) =>
+    c.html(<MessagePage apps={await nav().catch(() => [])} title="No encontrado" message="Esa página no existe." />, 404),
+  );
   app.onError((err, c) => {
     if (err instanceof HTTPException) return err.getResponse(); // p. ej. el 403 del CSRF
     console.error("[admin] error:", err);

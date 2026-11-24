@@ -175,8 +175,19 @@ export async function removeDevice(db: Db, deviceRowId: string): Promise<string 
   return row?.keyId;
 }
 
-export async function listApps(db: Db): Promise<AppRow[]> {
-  return db.select().from(apps).orderBy(desc(apps.createdAt));
+export type AppSummary = AppRow & { activeKeys: number; activeDevices: number };
+
+export async function listApps(db: Db): Promise<AppSummary[]> {
+  return db
+    .select({
+      ...getTableColumns(apps),
+      // Columna externa cualificada a mano, como en listLicenseKeys.
+      activeKeys: sql<number>`(select count(*)::int from license_keys k where k.app_id = "apps"."id" and k.status = 'active')`,
+      activeDevices: sql<number>`(select count(*)::int from devices d join license_keys k on k.id = d.key_id
+        where k.app_id = "apps"."id" and k.status = 'active' and d.status = 'active')`,
+    })
+    .from(apps)
+    .orderBy(desc(apps.createdAt));
 }
 
 export async function getApp(db: Db, appId: string): Promise<AppRow | undefined> {
