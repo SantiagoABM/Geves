@@ -1038,10 +1038,14 @@ Abre `https://<tu-servicio>.onrender.com/health` en el navegador. Debe responder
 
 ### 12.6 Comprobar que la IP registrada es la real
 
-El límite de intentos se basa en la IP. Hay que comprobar que nadie puede falsificarla con la cabecera `X-Forwarded-For`. Desde tu PC envía una petición que finge venir de la IP `203.0.113.77`:
+El límite de intentos se basa en la IP. Hay que comprobar que nadie puede falsificarla con una cabecera.
+
+**Por qué `TRUSTED_IP_HEADER` es `true-client-ip`.** En Render, `X-Forwarded-For` **no** es fiable: el proxy de Render añade la IP real al final, pero conserva lo que mande el cliente, así que la primera IP la elige quien llama (lo comprobamos el 2026-11-24). Delante de Render está Cloudflare, que escribe la IP real en `True-Client-IP` y reemplaza la que mande el cliente. Cloudflare rechaza con un 403 cualquier petición que traiga `CF-Connecting-IP`, por eso esa cabecera no entra en la prueba.
+
+Desde tu PC envía una petición que finge venir de otras IPs:
 
 ```powershell
-try { Invoke-RestMethod -Method Post -Uri "https://<tu-servicio>.onrender.com/v1/verify" -ContentType "application/json" -Headers @{ "X-Forwarded-For" = "203.0.113.77" } -Body '{"app_id":"prueba-ip","license_key":"x","device_id":"device-prueba-ip"}' } catch { $_.ErrorDetails.Message }
+try { Invoke-RestMethod -Method Post -Uri "https://<tu-servicio>.onrender.com/v1/verify" -ContentType "application/json" -Headers @{ "X-Forwarded-For" = "203.0.113.77"; "True-Client-IP" = "198.51.100.9" } -Body '{"app_id":"prueba-ip","license_key":"x","device_id":"device-prueba-ip"}' } catch { $_.ErrorDetails.Message }
 ```
 
 Responderá `invalid_client`, y es lo esperado. Después, en Supabase, abre **SQL Editor** y ejecuta:
@@ -1050,8 +1054,11 @@ Responderá `invalid_client`, y es lo esperado. Después, en Supabase, abre **SQ
 select ip, at from verification_log where device_id = 'device-prueba-ip' order by at desc limit 1;
 ```
 
-- Si aparece **tu IP pública real**: todo bien.
-- Si aparece **`203.0.113.77`**: la IP se puede falsificar. No publiques tus apps todavía; hay que cambiar `TRUSTED_IP_HEADER` y repetir la prueba.
+- Si aparece **tu IP pública real**: todo bien. Borra la fila de prueba con `delete from verification_log where device_id = 'device-prueba-ip';`.
+- Si aparece **`203.0.113.77`** o **`198.51.100.9`**: la IP se puede falsificar. No publiques tus apps todavía: revisa `TRUSTED_IP_HEADER` en Render y repite la prueba.
+- Si aparece **`unknown`**: Render dejó de enviar esa cabecera. Ninguna IP se falsifica, pero todas comparten un mismo límite de intentos. Revisa `TRUSTED_IP_HEADER`.
+
+Repite esta prueba si cambias de proveedor o añades un dominio propio.
 
 ### 12.7 Conectar tus apps
 
