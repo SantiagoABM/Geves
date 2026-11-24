@@ -18,9 +18,11 @@ services:
       # Render pone la variable PORT; la API debe escuchar en todas las interfaces.
       - key: HOST
         value: 0.0.0.0
-      # Comprobado tras el despliegue (manual 12.6). Cámbiala si la prueba falla.
+      # NO uses x-forwarded-for: Render conserva lo que manda el cliente y la primera IP
+      # se puede falsificar (probado). True-Client-IP la pone Cloudflare, delante de Render.
+      # Comprobado tras el despliegue (manual 12.6).
       - key: TRUSTED_IP_HEADER
-        value: x-forwarded-for
+        value: true-client-ip
       - key: DATABASE_POOL_MAX
         value: "5"
       - key: DATABASE_CA_FILE
