@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { readFileSync } from "node:fs";
@@ -46,6 +47,19 @@ function client(url: string, max: number) {
 
 export function createPostgresDb(url: string, max = 10): Db {
   return drizzle(client(url, max), { schema }) as unknown as Db;
+}
+
+/** `select 1` con límite de tiempo: true si la base responde. Nunca lanza. */
+export async function pingDatabase(db: Db, timeoutMs = 10_000): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  try {
+    return await Promise.race([db.execute(sql`select 1`).then(() => true, () => false), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Aplica las migraciones pendientes y cierra la conexión. Usar con el usuario dueño de la base. */

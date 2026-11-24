@@ -1,6 +1,15 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { apiDatabaseUrl, applyApiRoleGrants, apps, devices, licenseKeys, sslFor } from "../src/index.ts";
+import {
+  apiDatabaseUrl,
+  applyApiRoleGrants,
+  apps,
+  devices,
+  licenseKeys,
+  pingDatabase,
+  sslFor,
+  type Db,
+} from "../src/index.ts";
 import { createTestDb } from "../src/testing.ts";
 
 /** Drizzle envuelve el error de PostgreSQL; el mensaje original está en `cause`. */
@@ -45,6 +54,18 @@ describe("sslFor", () => {
       ca,
       rejectUnauthorized: true,
     });
+  });
+});
+
+describe("pingDatabase", () => {
+  it("true con una base que responde", async () => {
+    const { db } = await createTestDb();
+    expect(await pingDatabase(db)).toBe(true);
+  });
+
+  it("false si la base no contesta a tiempo", async () => {
+    const hanging = { execute: () => new Promise(() => {}) } as unknown as Db;
+    expect(await pingDatabase(hanging, 50)).toBe(false);
   });
 });
 

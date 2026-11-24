@@ -976,7 +976,7 @@ En lugar de un VPS: la base va en **Supabase** y la API en **Render**. El panel 
 
 **Límites de los planes gratuitos** (compruébalos en sus webs, cambian con el tiempo):
 
-- **Render duerme** el servicio tras 15 minutos sin peticiones, y la siguiente tarda hasta un minuto en despertarlo. Las apps con token válido no lo notan; quien activa una clave en ese momento espera. Por eso los ejemplos del capítulo 7 esperan hasta 60 segundos. Para clientes que pagan, el plan de pago más barato de Render no duerme.
+- **Render duerme** el servicio tras 15 minutos sin peticiones, y la siguiente tarda hasta un minuto en despertarlo. Las apps con token válido no lo notan; quien activa una clave en ese momento espera. Por eso los ejemplos del capítulo 7 esperan hasta 60 segundos. Para evitarlo, configura un aviso periódico a `/wakeup` (sección 12.8). Para clientes que pagan, el plan de pago más barato de Render no duerme.
 - **Supabase gratis** tiene unos 500 MB de base y pausa los proyectos que pasan mucho tiempo sin actividad. Limpia el registro de verificaciones de vez en cuando (sección 6).
 
 ### 12.1 Crear el proyecto de Supabase
@@ -1064,7 +1064,25 @@ Repite esta prueba si cambias de proveedor o añades un dominio propio.
 
 La URL de la API es `https://<tu-servicio>.onrender.com`, o tu propio dominio si lo añades en Render (**Settings → Custom Domains**). El resto es igual que en el capítulo 7.
 
-### 12.8 Mantenimiento
+### 12.8 Que no se duerma (cron-job.org)
+
+La ruta `GET /wakeup` existe para un aviso periódico desde fuera:
+
+- Cada llamada cuenta como actividad, así que Render no duerme el servicio.
+- Como mucho una vez por minuto hace una consulta mínima (`select 1`) a Supabase, para que el proyecto tenga actividad y no se pause. Las demás llamadas de ese minuto reciben el último resultado, así que llamarla mucho no carga la base.
+- Responde `{"ok":true}` (200) si la API y la base funcionan, y un **503** si la base no contesta en 10 segundos.
+
+Para configurarlo:
+
+1. Crea una cuenta en [cron-job.org](https://cron-job.org) y pulsa **Create cronjob**.
+2. **URL:** `https://<tu-servicio>.onrender.com/wakeup`.
+3. **Execution schedule:** **cada 5 minutos**. Render duerme a los 15 minutos sin peticiones, así que más seguido no aporta nada. cron-job.org tampoco permite menos de un minuto.
+4. En **Notifications**, activa el aviso cuando falle. Un 503 te indica que la base no responde.
+5. Guarda y pulsa **Test run**: debe responder `{"ok":true}`.
+
+**Ojo con las horas gratis de Render:** el plan gratuito da unas 750 horas al mes **por cuenta**, en total. Un servicio despierto todo el mes gasta unas 744, así que te cabe **uno solo**. Si tienes otro servicio gratuito despierto en la misma cuenta, se acaban las horas y Render suspende los servicios gratuitos hasta el mes siguiente. Comprueba el consumo en **Billing** de Render.
+
+### 12.9 Mantenimiento
 
 - **Actualizar:** al subir cambios a GitHub (`git push`), Render vuelve a desplegar solo. Si la actualización trae migraciones, ejecuta antes `npm run db:migrate` y `npm run db:roles` desde tu PC.
 - **Copias de seguridad:** revisa qué copias incluye tu plan de Supabase. Si quieres una propia y tienes las herramientas de PostgreSQL instaladas, `pg_dump` funciona con la misma `ADMIN_DATABASE_URL`.

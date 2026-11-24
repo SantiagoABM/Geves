@@ -1,5 +1,13 @@
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { isAllowedOrigin, isRateLimited, verifyLicense, type Db, type TokenSigner, type VerifyError } from "@gk/core";
+import {
+  isAllowedOrigin,
+  isRateLimited,
+  pingDatabase,
+  verifyLicense,
+  type Db,
+  type TokenSigner,
+  type VerifyError,
+} from "@gk/core";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
@@ -59,6 +67,8 @@ const fail = (error: ApiError, extra: Record<string, unknown> = {}) => ({
   message: MESSAGES[error],
 });
 
+const WAKEUP_DB_EVERY_MS = 60_000;
+
 export type ApiDeps = { db: Db; signer: TokenSigner; ipHeader?: string; now?: () => Date };
 
 export function createApiApp(d: ApiDeps) {
@@ -102,6 +112,16 @@ export function createApiApp(d: ApiDeps) {
   });
 
   app.get("/health", (c) => c.json({ ok: true }));
+
+  // Para un cron externo (cron-job.org): mantiene despierta la API en Render y, como mucho una vez
+  // por minuto, consulta la base para que Supabase no pause el proyecto. Las llamadas de ese minuto
+  // reciben el último resultado, así que nadie puede cargar la base llamando a esta ruta.
+  let dbCheck: { at: number; ok: Promise<boolean> } | undefined;
+  app.get("/wakeup", async (c) => {
+    const t = now().getTime();
+    if (!dbCheck || t - dbCheck.at >= WAKEUP_DB_EVERY_MS) dbCheck = { at: t, ok: pingDatabase(d.db) };
+    return (await dbCheck.ok) ? c.json({ ok: true }) : c.json(fail("server_error"), 503);
+  });
 
   app.post(
     "/v1/verify",

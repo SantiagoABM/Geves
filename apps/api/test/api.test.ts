@@ -16,13 +16,14 @@ const issuer = "gestor-de-claves";
 let db: Db;
 let api: ReturnType<typeof createApiApp>;
 let publicKeyPem: string;
+let signer: Awaited<ReturnType<typeof createTokenSigner>>;
 let n = 0;
 
 beforeAll(async () => {
   ({ db } = await createTestDb());
   const keys = await generateSigningKeys();
   publicKeyPem = keys.publicKeyPem;
-  const signer = await createTokenSigner({ privateKeyPem: keys.privateKeyPem, kid: "k1", issuer, ttlSeconds: 7 * 86_400 });
+  signer = await createTokenSigner({ privateKeyPem: keys.privateKeyPem, kid: "k1", issuer, ttlSeconds: 7 * 86_400 });
   api = createApiApp({ db, signer, ipHeader: "x-test-ip" });
 });
 
@@ -209,6 +210,55 @@ describe("CORS y rutas", () => {
   it("GET /health → ok", async () => {
     const res = await api.request("/health");
     expect(await res.json()).toEqual({ ok: true });
+  });
+
+  describe("GET /wakeup", () => {
+    /** Base de datos falsa que cuenta las consultas y puede fallar a voluntad. */
+    function countingDb() {
+      const state = { calls: 0, down: false };
+      const fake = {
+        execute: async () => {
+          state.calls++;
+          if (state.down) throw new Error("connection refused at db.internal:5432");
+          return [];
+        },
+      } as unknown as Db;
+      return { state, fake };
+    }
+
+    it("responde ok con la base de datos real", async () => {
+      const res = await api.request("/wakeup");
+      expect(res.status).toBe(200);
+      expect(await json(res)).toEqual({ ok: true });
+    });
+
+    it("consulta la base como mucho una vez por minuto", async () => {
+      const { state, fake } = countingDb();
+      let t = Date.parse("2026-11-24T10:00:00Z");
+      const w = createApiApp({ db: fake, signer, now: () => new Date(t) });
+
+      for (let i = 0; i < 5; i++) expect((await w.request("/wakeup")).status).toBe(200);
+      expect(state.calls).toBe(1);
+
+      t += 59_000;
+      await w.request("/wakeup");
+      expect(state.calls).toBe(1);
+
+      t += 1_000;
+      await w.request("/wakeup");
+      expect(state.calls).toBe(2);
+    });
+
+    it("con la base caída responde 503 sin detalles internos", async () => {
+      const { state, fake } = countingDb();
+      state.down = true;
+      const w = createApiApp({ db: fake, signer });
+      const res = await w.request("/wakeup");
+      expect(res.status).toBe(503);
+      const text = await res.text();
+      expect(text).not.toContain("db.internal");
+      expect(JSON.parse(text)).toMatchObject({ ok: false, error: "server_error" });
+    });
   });
 
   it("no hay rutas de administración", async () => {
